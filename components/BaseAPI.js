@@ -1,76 +1,28 @@
+export var methodType = { get: 'GET', post: 'POST', put: 'PUT', delete: 'DELETE' };
 
-export class CustomError extends Error {
-	content;
+export default class BaseAPI {
+  static JSONRequest(api, method, headers, options, content) {
+    const host = "http://localhost:3000";
 
-	constructor(content) {
-		super();
-		this.content = content
-	}
+    let requestOptions = {
+      method: method,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      ...options
+    }
 
-	msg(s) {
-		this.message = s;
-	}
-}
+    if (method === methodType.post || method === methodType.put) {
+      requestOptions.body = JSON.stringify(content)
+    }
 
-export var methodType = {get : 'GET', post : 'POST', put : 'PUT', delete : 'DELETE'};
+    return fetch(host + api, requestOptions)
+      .then(response => {
+        if (!response.ok) {
+          console.error(response)
+          throw new "NOT OK";
+        }
 
-export default class BaseAPI {	
-	static JSONRequest(api, method, headers, options, content) {
-		const host = "https://mdpapi.kyaw.tech/";
-
-		let requestOptions = {
-			method: method,
-			headers: {...headers, 'Content-Type': 'application/json'},
-			...options
-		}
-
-		if (method === methodType.post || method === methodType.put) {
-			requestOptions.body = JSON.stringify(content)
-		}
-
-		return new Promise((resolve, reject) => {
-			fetch(host + api, requestOptions)
-				.then(response => {
-					if (!response.ok) {
-						throw new CustomError(response);
-					}
-
-					response.json()
-						.then(res => {
-							if (res.error) {
-								reject(JSON.stringify(res.error));
-							}
-							resolve(res.data);
-						})
-						.catch(err => {
-							resolve({});
-						});
-
-				})
-				.catch(async (err) => {
-					console.log(err)
-					if (err instanceof CustomError) {
-
-						// best effort to capture all cases of err handling
-						let errStr = await err.content.json()
-							.then(res => {
-								if (res.errors) {
-									return JSON.stringify(res.errors);
-								}
-
-								return "";
-							}).catch(() => {
-								return "";
-							});
-
-						err.msg(errStr);
-						reject(err);
-
-					} else {
-						reject(err);
-					}
-				})
-		})
-	}
-
+        return response.json()
+          .then(res => res.data)
+      })
+  }
 }

@@ -1,16 +1,8 @@
 import React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import QueryAPI from "./QueryAPI";
 
 const Direction = {
-  NORTH: 0,
-  EAST: 2,
-  SOUTH: 4,
-  WEST: 6,
-  SKIP: 8,
-};
-
-const ObDirection = {
   NORTH: 0,
   EAST: 2,
   SOUTH: 4,
@@ -31,10 +23,6 @@ const transformCoord = (x, y) => {
   return { x: 19 - y, y: x };
 };
 
-function classNames(...classes) {
-  return classes.filter(Boolean).join(" ");
-}
-
 export default function Simulator() {
   const [robotState, setRobotState] = useState({
     x: 1,
@@ -44,11 +32,11 @@ export default function Simulator() {
   });
   const [robotX, setRobotX] = useState(1);
   const [robotY, setRobotY] = useState(1);
-  const [robotDir, setRobotDir] = useState(0);
+  const [robotDir, setRobotDir] = useState(Direction.NORTH);
   const [obstacles, setObstacles] = useState([]);
   const [obXInput, setObXInput] = useState(0);
   const [obYInput, setObYInput] = useState(0);
-  const [directionInput, setDirectionInput] = useState(ObDirection.NORTH);
+  const [obDirInput, setObDirInput] = useState(Direction.NORTH);
   const [isComputing, setIsComputing] = useState(false);
   const [path, setPath] = useState([]);
   const [commands, setCommands] = useState([]);
@@ -85,28 +73,18 @@ export default function Simulator() {
       markerX--;
     }
 
-    // Go from i = -1 to i = 1
-    for (let i = -1; i < 2; i++) {
-      // Go from j = -1 to j = 1
-      for (let j = -1; j < 2; j++) {
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
         // Transform the coordinates to our coordinate system where (0, 0) is at the bottom left
         const coord = transformCoord(robotState.x + i, robotState.y + j);
         // If the cell is the marker cell, add the robot state to the cell
-        if (markerX === i && markerY === j) {
-          robotCells.push({
-            x: coord.x,
-            y: coord.y,
-            d: robotState.d,
-            s: robotState.s,
-          });
-        } else {
-          robotCells.push({
-            x: coord.x,
-            y: coord.y,
-            d: null,
-            s: -1,
-          });
-        }
+        const isMarker = markerX === i && markerY === j;
+        robotCells.push({
+          x: coord.x,
+          y: coord.y,
+          d: isMarker ? robotState.d : null,
+          s: isMarker ? robotState.s : -1,
+        });
       }
     }
 
@@ -174,7 +152,7 @@ export default function Simulator() {
     newObstacles.push({
       x: obXInput,
       y: obYInput,
-      d: directionInput,
+      d: obDirInput,
       id: generateNewID(),
     });
     // Set the obstacles to the new array
@@ -183,18 +161,17 @@ export default function Simulator() {
 
   const onClickRobot = () => {
     // Set the robot state to the input
-
     setRobotState({ x: robotX, y: robotY, d: robotDir, s: -1 });
   };
 
   const onDirectionInputChange = (event) => {
     // Set the direction input to the input
-    setDirectionInput(Number(event.target.value));
+    setObDirInput(Number(event.target.value));
   };
 
   const onRobotDirectionInputChange = (event) => {
     // Set the robot direction to the input
-    setRobotDir(event.target.value);
+    setRobotDir(Number(event.target.value));
   };
 
   const onRemoveObstacle = (ob) => {
@@ -211,158 +188,114 @@ export default function Simulator() {
     setObstacles(newObstacles);
   };
 
-  const compute = () => {
+  const compute = async () => {
     // Set computing to true, act like a lock
     setIsComputing(true);
     // Call the query function from the API
-    QueryAPI.query(obstacles, robotX, robotY, robotDir, (data, err) => {
-      if (data) {
-        // If the data is valid, set the path
-        setPath(data.data.path);
-        // Set the commands
-        const commands = [];
-        for (let x of data.data.commands) {
-          // If the command is a snapshot, skip it
-          if (x.startsWith("SNAP")) {
-            continue;
-          }
-          commands.push(x);
-        }
-        setCommands(commands);
-      }
-      // Set computing to false, release the lock
-      setIsComputing(false);
-    });
+    const pathPlan = await QueryAPI.query(obstacles, robotX, robotY, robotDir);
+    console.log("Path plan", pathPlan);
+
+    if (pathPlan) {
+      setPath(pathPlan.path);
+      const commands = pathPlan.commands.filter(c => !c.startsWith("SNAP"));
+      setCommands(commands);
+    }
+    // Set computing to false, release the lock
+    setIsComputing(false);
+  };
+
+  const reset = () => {
+    setRobotX(1);
+    setRobotDir(0);
+    setRobotY(1);
+    setRobotState({ x: 1, y: 1, d: Direction.NORTH, s: -1 });
+    setPath([]);
+    setCommands([]);
+    setPage(0);
+  }
+
+  const onReset = () => {
+    reset();
   };
 
   const onResetAll = () => {
     // Reset all the states
-    setRobotX(1);
-    setRobotDir(0);
-    setRobotY(1);
-    setRobotState({ x: 1, y: 1, d: Direction.NORTH, s: -1 });
-    setPath([]);
-    setCommands([]);
-    setPage(0);
+    reset();
     setObstacles([]);
   };
 
-  const onReset = () => {
-    // Reset all the states
-    setRobotX(1);
-    setRobotDir(0);
-    setRobotY(1);
-    setRobotState({ x: 1, y: 1, d: Direction.NORTH, s: -1 });
-    setPath([]);
-    setCommands([]);
-    setPage(0);
-  };
+  const pathCells = useMemo(() => {
+    if (path.length == 0) {
+      return []
+    }
+    const cells = [];
+    let cur = path[0];
+    const arrayRange = (start, stop) =>
+      Array.from(
+        { length: (stop - start) + 1 },
+        (_, index) => start + index
+      );
+
+    for (const next of path.slice(1)) {
+      const { x: cx, y: cy } = cur;
+      const { x: nx, y: ny } = next;
+
+      const xPath = cx > nx ? arrayRange(nx + 1, cx) : arrayRange(cx + 1, nx);
+      const yPath = cy > ny ? arrayRange(ny + 1, cy) : arrayRange(cy + 1, ny);
+
+      if (nx != cx) {
+        cells.push(...xPath.map(x => transformCoord(x, cy)));
+      }
+      if (ny != cy) {
+        cells.push(...yPath.map(y => transformCoord(nx, y)));
+      }
+      cur = next
+    }
+    return cells
+  }, [path])
 
   const renderGrid = () => {
     // Initialize the empty rows array
     const rows = [];
-
-    const baseStyle = {
-      width: 25,
-      height: 25,
-      borderStyle: "solid",
-      borderTopWidth: 1,
-      borderBottomWidth: 1,
-      borderLeftWidth: 1,
-      borderRightWidth: 1,
-      padding: 0,
-    };
 
     // Generate robot cells
     const robotCells = generateRobotCells();
 
     // Generate the grid
     for (let i = 0; i < 20; i++) {
-      const cells = [
-        // Header cells
-        <td key={i} className="w-5 h-5 md:w-8 md:h-8">
-          <span className="text-sky-900 font-bold text-[0.6rem] md:text-base ">
-            {19 - i}
-          </span>
-        </td>,
-      ];
+      const cells = [label(i, 19 - i)];
 
       for (let j = 0; j < 20; j++) {
-        let foundOb = null;
-        let foundRobotCell = null;
-
-        for (const ob of obstacles) {
-          const transformed = transformCoord(ob.x, ob.y);
-          if (transformed.x === i && transformed.y === j) {
-            foundOb = ob;
-            break;
-          }
-        }
-
-        if (!foundOb) {
-          for (const cell of robotCells) {
-            if (cell.x === i && cell.y === j) {
-              foundRobotCell = cell;
-              break;
-            }
-          }
-        }
+        const foundOb = obstacles.find((ob) => {
+          const { x, y } = transformCoord(ob.x, ob.y);
+          return x === i && y == j
+        })
+        const foundRobotCell = robotCells.find((c) => (c.x === i && c.y === j));
+        const isPathCell = pathCells.some(c => (c.x === i && c.y === j))
 
         if (foundOb) {
-          if (foundOb.d === Direction.WEST) {
-            cells.push(
-              <td className="border border-l-4 border-l-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.EAST) {
-            cells.push(
-              <td className="border border-r-4 border-r-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.NORTH) {
-            cells.push(
-              <td className="border border-t-4 border-t-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.SOUTH) {
-            cells.push(
-              <td className="border border-b-4 border-b-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.SKIP) {
-            cells.push(
-              <td className="border w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          }
+          cells.push(obCell(foundOb.d));
         } else if (foundRobotCell) {
           if (foundRobotCell.d !== null) {
             cells.push(
-              <td
-                className={`border w-5 h-5 md:w-8 md:h-8 ${
-                  foundRobotCell.s != -1 ? "bg-red-500" : "bg-yellow-300"
-                }`}
-              />
+              <td className={`border w-5 h-5 md:w-8 md:h-8 ${foundRobotCell.s != -1 ? "bg-red-500" : "bg-blue-500"}`} />
             );
           } else {
-            cells.push(
-              <td className="bg-green-600 border-white border w-5 h-5 md:w-8 md:h-8" />
-            );
+            cells.push(<td className="bg-teal-800 border-white border w-5 h-5 md:w-8 md:h-8" />);
           }
+        } else if (isPathCell) {
+          cells.push(pathCell());
         } else {
-          cells.push(
-            <td className="border-black border w-5 h-5 md:w-8 md:h-8" />
-          );
+          cells.push(emptyCell());
         }
       }
 
-      rows.push(<tr key={19 - i}>{cells}</tr>);
+      rows.push(<tr key={`row-cells-${19 - i}`}>{cells}</tr>);
     }
 
-    const yAxis = [<td key={0} />];
+    const yAxis = [<td key={`yAxis-0`} />];
     for (let i = 0; i < 20; i++) {
-      yAxis.push(
-        <td className="w-5 h-5 md:w-8 md:h-8">
-          <span className="text-sky-900 font-bold text-[0.6rem] md:text-base ">
-            {i}
-          </span>
-        </td>
-      );
+      yAxis.push(label(i, i));
     }
     rows.push(<tr key={20}>{yAxis}</tr>);
     return rows;
@@ -374,136 +307,11 @@ export default function Simulator() {
   }, [page, path]);
 
   return (
-    <div className="flex flex-col items-center justify-center">
-      <div className="flex flex-col items-center text-center bg-sky-200 rounded-xl shadow-xl mb-8">
-        <h2 className="card-title text-black pt-4">Algorithm Simulator</h2>
-      </div>
-
-      <div className="flex flex-col items-center text-center bg-sky-200 rounded-xl shadow-xl">
-        <div className="card-body items-center text-center p-4">
-          <h2 className="card-title text-black">Robot Position</h2>
-          <div className="form-control">
-            <label className="input-group input-group-horizontal">
-              <span className="bg-primary p-2">X</span>
-              <input
-                onChange={onChangeRobotX}
-                type="number"
-                placeholder="1"
-                min="1"
-                max="18"
-                className="input input-bordered  text-blue-900 w-20"
-              />
-              <span className="bg-primary p-2">Y</span>
-              <input
-                onChange={onChangeRobotY}
-                type="number"
-                placeholder="1"
-                min="1"
-                max="18"
-                className="input input-bordered  text-blue-900 w-20"
-              />
-              <span className="bg-primary p-2">D</span>
-              <select
-                onChange={onRobotDirectionInputChange}
-                value={robotDir}
-                className="select text-blue-900 py-2 pl-2 pr-6"
-              >
-                <option value={ObDirection.NORTH}>Up</option>
-                <option value={ObDirection.SOUTH}>Down</option>
-                <option value={ObDirection.WEST}>Left</option>
-                <option value={ObDirection.EAST}>Right</option>
-              </select>
-              <button className="btn btn-success p-2" onClick={onClickRobot}>
-                Set
-              </button>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col items-center text-center bg-sky-200 p-4 rounded-xl shadow-xl m-8">
-        <h2 className="card-title text-black pb-2">Add Obstacles</h2>
-        <div className="form-control">
-          <label className="input-group input-group-horizontal">
-            <span className="bg-primary p-2">X</span>
-            <input
-              onChange={onChangeX}
-              type="number"
-              placeholder="1"
-              min="0"
-              max="19"
-              className="input input-bordered  text-blue-900 w-20"
-            />
-            <span className="bg-primary p-2">Y</span>
-            <input
-              onChange={onChangeY}
-              type="number"
-              placeholder="1"
-              min="0"
-              max="19"
-              className="input input-bordered  text-blue-900 w-20"
-            />
-            <span className="bg-primary p-2">D</span>
-            <select
-              onChange={onDirectionInputChange}
-              value={directionInput}
-              className="select text-blue-900 py-2 pl-2 pr-6"
-            >
-              <option value={ObDirection.NORTH}>Up</option>
-              <option value={ObDirection.SOUTH}>Down</option>
-              <option value={ObDirection.WEST}>Left</option>
-              <option value={ObDirection.EAST}>Right</option>
-              <option value={ObDirection.SKIP}>None</option>
-            </select>
-            <button className="btn btn-success p-2" onClick={onClickObstacle}>
-              Add
-            </button>
-          </label>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-4 gap-x-2 gap-y-4 items-center">
-        {obstacles.map((ob) => {
-          return (
-            <div
-              key={ob}
-              className="badge flex flex-row text-black bg-sky-100 rounded-xl text-xs md:text-sm h-max border-cyan-500"
-            >
-              <div flex flex-col>
-                <div>X: {ob.x}</div>
-                <div>Y: {ob.y}</div>
-                <div>D: {DirectionToString[ob.d]}</div>
-              </div>
-              <div>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  className="inline-block w-4 h-4 stroke-current"
-                  onClick={() => onRemoveObstacle(ob)}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  ></path>
-                </svg>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="btn-group btn-group-horizontal py-4">
-        <button className="btn btn-error" onClick={onResetAll}>
-          Reset All
-        </button>
-        <button className="btn btn-warning" onClick={onReset}>
-          Reset Robot
-        </button>
-        <button className="btn btn-success" onClick={compute}>
-          Submit
-        </button>
+    <div className="flex flex-col items-center justify-center mb-12">
+      <div className="flex flex-col items-center text-center mb-8">
+        <h2 className="card-title text-black p-4 text-4xl">
+          Algorithm Simulator
+        </h2>
       </div>
 
       {path.length > 0 && (
@@ -559,9 +367,181 @@ export default function Simulator() {
           </button>
         </div>
       )}
+
       <table className="border-collapse border-none border-black ">
         <tbody>{renderGrid()}</tbody>
       </table>
+
+      <div className="btn-group btn-group-horizontal py-4">
+        <button className="btn btn-error" onClick={onResetAll}>
+          Reset All
+        </button>
+        <button className="btn btn-warning" onClick={onReset}>
+          Reset Robot
+        </button>
+        <button className="btn btn-success" onClick={compute}>
+          Calculate Path
+        </button>
+      </div>
+
+      <div className="flex flex-col items-center text-center rounded-xl">
+        <h2 className="card-title text-black">Set Robot Position</h2>
+        <div className="form-control">
+          <label className="input-group input-group-horizontal">
+            <span className="bg-gray-500 p-2 text-gray-200">x</span>
+            <input
+              onChange={onChangeRobotX}
+              type="number"
+              placeholder="1"
+              min="1"
+              max="18"
+              defaultValue="1"
+              className="input text-gray-900 input-bordered"
+            />
+            <span className="bg-gray-500 p-2 text-gray-200">y</span>
+            <input
+              onChange={onChangeRobotY}
+              type="number"
+              placeholder="1"
+              min="1"
+              max="18"
+              defaultValue="1"
+              className="input text-gray-900 input-bordered"
+            />
+            <span className="bg-gray-500 p-2 text-gray-200">D</span>
+            <select
+              onChange={onRobotDirectionInputChange}
+              value={robotDir}
+              className="select text-gray-700 py-2 pl-2 pr-6"
+            >
+              <option value={Direction.NORTH}>Up</option>
+              <option value={Direction.SOUTH}>Down</option>
+              <option value={Direction.WEST}>Left</option>
+              <option value={Direction.EAST}>Right</option>
+            </select>
+            <button className="btn btn-warning p-2 w-12" onClick={onClickRobot}>
+              Set
+            </button>
+          </label>
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center text-center p-4 rounded-xl">
+        <h2 className="card-title text-black pb-2">Set Obstacles</h2>
+        <div className="form-control">
+          <label className="input-group input-group-horizontal">
+            <span className="bg-gray-500 p-2 text-gray-200">x</span>
+            <input
+              onChange={onChangeX}
+              type="number"
+              placeholder="1"
+              min="0"
+              max="19"
+              className="input input-bordered text-gray-900"
+            />
+            <span className="bg-gray-500 p-2 text-gray-200">y</span>
+            <input
+              onChange={onChangeY}
+              type="number"
+              placeholder="1"
+              min="0"
+              max="19"
+              className="input input-bordered text-gray-900"
+            />
+            <span className="bg-gray-500 p-2 text-gray-200">D</span>
+            <select
+              onChange={onDirectionInputChange}
+              value={obDirInput}
+              className="select text-gray-800 py-2 pl-2 pr-6"
+            >
+              <option value={Direction.NORTH}>Up</option>
+              <option value={Direction.SOUTH}>Down</option>
+              <option value={Direction.WEST}>Left</option>
+              <option value={Direction.EAST}>Right</option>
+              <option value={Direction.SKIP}>None</option>
+            </select>
+            <button className="btn btn-warning w-12" onClick={onClickObstacle}>
+              Set
+            </button>
+          </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-x-2 gap-y-4 items-center">
+        {obstacles.map((ob, id) => {
+          return (
+            <div
+              key={ob}
+              className="flex flex-row justify-between !min-w-[5rem] p-2 text-gray-800 bg-sky-100 rounded-md text-xs md:text-sm h-max"
+            >
+              <div flex flex-col>
+                <div>X={ob.x}</div>
+                <div>Y={ob.y}</div>
+                <div>D={DirectionToString[ob.d]}</div>
+              </div>
+              <div onClick={() => onRemoveObstacle(ob)} className='flex flex-col self-start'>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  className="inline-block w-4 h-4 stroke-gray-500 border-2"
+                  onClick={() => onRemoveObstacle(ob)}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  ></path>
+                </svg>
+                [{id}]
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function obCell(direction) {
+  let className = "border w-5 h-5 md:w-8 md:h-8 bg-gray-700";
+  switch (direction) {
+    case Direction.WEST:
+      className += ' border-l-4 border-l-violet-500'
+      break;
+    case Direction.EAST:
+      className += ' border-r-4 border-r-violet-500'
+      break;
+    case Direction.NORTH:
+      className += ' border-t-4 border-t-violet-500'
+      break;
+    case Direction.SOUTH:
+      className += ' border-b-4 border-b-violet-500'
+      break;
+  }
+  return (
+    <td className={className} />
+  )
+}
+
+
+function emptyCell() {
+  return (
+    <td className="border-black border w-5 h-5 md:w-8 md:h-8" />
+  )
+}
+
+function pathCell() {
+  return (
+    <td className="border-black bg-gray-300 border w-5 h-5 md:w-8 md:h-8" />
+  )
+}
+
+function label(key, value) {
+  return (
+    <td key={key} className="w-5 h-5 md:w-8 md:h-8 text-black font-bold text-[0.6rem] md:text-base ">
+      {value}
+    </td>
+  )
 }
