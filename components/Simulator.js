@@ -33,11 +33,13 @@ export default function Simulator() {
   const [robotX, setRobotX] = useState(1);
   const [robotY, setRobotY] = useState(1);
   const [robotDir, setRobotDir] = useState(Direction.NORTH);
-  const [obstacles, setObstacles] = useState([]);
   const [obXInput, setObXInput] = useState(0);
   const [obYInput, setObYInput] = useState(0);
   const [obDirInput, setObDirInput] = useState(Direction.NORTH);
+
+  const [obstacles, setObstacles] = useState([]);
   const [isComputing, setIsComputing] = useState(false);
+
   const [path, setPath] = useState([]);
   const [commands, setCommands] = useState([]);
   const [page, setPage] = useState(0);
@@ -160,18 +162,7 @@ export default function Simulator() {
   };
 
   const onClickRobot = () => {
-    // Set the robot state to the input
     setRobotState({ x: robotX, y: robotY, d: robotDir, s: -1 });
-  };
-
-  const onDirectionInputChange = (event) => {
-    // Set the direction input to the input
-    setObDirInput(Number(event.target.value));
-  };
-
-  const onRobotDirectionInputChange = (event) => {
-    // Set the robot direction to the input
-    setRobotDir(Number(event.target.value));
   };
 
   const onRemoveObstacle = (ob) => {
@@ -193,7 +184,6 @@ export default function Simulator() {
     setIsComputing(true);
     // Call the query function from the API
     const pathPlan = await QueryAPI.query(obstacles, robotX, robotY, robotDir);
-    console.log("Path plan", pathPlan);
 
     if (pathPlan) {
       setPath(pathPlan.path);
@@ -219,7 +209,6 @@ export default function Simulator() {
   };
 
   const onResetAll = () => {
-    // Reset all the states
     reset();
     setObstacles([]);
   };
@@ -308,10 +297,52 @@ export default function Simulator() {
 
   return (
     <div className="flex flex-col items-center justify-center mb-12">
-      <div className="flex flex-col items-center text-center mb-8">
+      <div className="flex flex-col items-center text-center">
         <h2 className="card-title text-black p-4 text-4xl">
           Algorithm Simulator
         </h2>
+      </div>
+
+      <div className="flex flex-col items-center text-center p-8">
+        <h2 className="card-title text-black">Set Robot Position</h2>
+        <div className="form-control">
+          <label className="input-group input-group-horizontal">
+            <span className="bg-gray-500 p-2 text-gray-200">x</span>
+            <input
+              onChange={onChangeRobotX}
+              type="number"
+              placeholder="1"
+              min="1"
+              max="18"
+              defaultValue="1"
+              className="input text-gray-900 input-bordered"
+            />
+            <span className="bg-gray-500 p-2 text-gray-200">y</span>
+            <input
+              onChange={onChangeRobotY}
+              type="number"
+              placeholder="1"
+              min="1"
+              max="18"
+              defaultValue="1"
+              className="input text-gray-900 input-bordered"
+            />
+            <span className="bg-gray-500 p-2 text-gray-200">D</span>
+            <select
+              onChange={(event) => setRobotDir(Number(event.target.value))}
+              value={robotDir}
+              className="select text-gray-700 py-2 pl-2 pr-6"
+            >
+              <option value={Direction.NORTH}>Up</option>
+              <option value={Direction.SOUTH}>Down</option>
+              <option value={Direction.WEST}>Left</option>
+              <option value={Direction.EAST}>Right</option>
+            </select>
+            <button className="btn btn-warning p-2 w-12" onClick={onClickRobot}>
+              Set
+            </button>
+          </label>
+        </div>
       </div>
 
       {path.length > 0 && (
@@ -384,50 +415,8 @@ export default function Simulator() {
         </button>
       </div>
 
-      <div className="flex flex-col items-center text-center rounded-xl">
-        <h2 className="card-title text-black">Set Robot Position</h2>
-        <div className="form-control">
-          <label className="input-group input-group-horizontal">
-            <span className="bg-gray-500 p-2 text-gray-200">x</span>
-            <input
-              onChange={onChangeRobotX}
-              type="number"
-              placeholder="1"
-              min="1"
-              max="18"
-              defaultValue="1"
-              className="input text-gray-900 input-bordered"
-            />
-            <span className="bg-gray-500 p-2 text-gray-200">y</span>
-            <input
-              onChange={onChangeRobotY}
-              type="number"
-              placeholder="1"
-              min="1"
-              max="18"
-              defaultValue="1"
-              className="input text-gray-900 input-bordered"
-            />
-            <span className="bg-gray-500 p-2 text-gray-200">D</span>
-            <select
-              onChange={onRobotDirectionInputChange}
-              value={robotDir}
-              className="select text-gray-700 py-2 pl-2 pr-6"
-            >
-              <option value={Direction.NORTH}>Up</option>
-              <option value={Direction.SOUTH}>Down</option>
-              <option value={Direction.WEST}>Left</option>
-              <option value={Direction.EAST}>Right</option>
-            </select>
-            <button className="btn btn-warning p-2 w-12" onClick={onClickRobot}>
-              Set
-            </button>
-          </label>
-        </div>
-      </div>
-
-      <div className="flex flex-col items-center text-center p-4 rounded-xl">
-        <h2 className="card-title text-black pb-2">Set Obstacles</h2>
+      <div className="flex flex-col items-center text-center p-4">
+        <h2 className="card-title text-black pb-2">Add Obstacles</h2>
         <div className="form-control">
           <label className="input-group input-group-horizontal">
             <span className="bg-gray-500 p-2 text-gray-200">x</span>
@@ -450,7 +439,7 @@ export default function Simulator() {
             />
             <span className="bg-gray-500 p-2 text-gray-200">D</span>
             <select
-              onChange={onDirectionInputChange}
+              onChange={(event) => setObDirInput(Number(event.target.value))}
               value={obDirInput}
               className="select text-gray-800 py-2 pl-2 pr-6"
             >
@@ -471,10 +460,10 @@ export default function Simulator() {
         {obstacles.map((ob, id) => {
           return (
             <div
-              key={ob}
+              key={`ob[${id}]-${ob.x}__${ob.y}`}
               className="flex flex-row justify-between !min-w-[5rem] p-2 text-gray-800 bg-sky-100 rounded-md text-xs md:text-sm h-max"
             >
-              <div flex flex-col>
+              <div className="flex flex-col">
                 <div>X={ob.x}</div>
                 <div>Y={ob.y}</div>
                 <div>D={DirectionToString[ob.d]}</div>
