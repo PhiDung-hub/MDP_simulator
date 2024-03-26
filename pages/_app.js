@@ -4,7 +4,7 @@ import Simulator from "components/Simulator";
 
 export default function App() {
   return (
-    <div className="bg-violet-300 h-screen overflow-auto">
+    <div className="bg-yellow-50 h-screen overflow-auto">
       <Head>
         <title>Algorithm Simulator</title>
       </Head>
